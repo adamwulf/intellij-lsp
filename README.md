@@ -103,3 +103,7 @@ You can add a custom LSPIconProvider to provide custom icons for the completion/
 - How can I make modifications to the plugin and test them?
   - Clone either master (for the latest release) or the current development branch, open the project in IntelliJ, set the project SDK to the IntelliJ SDK, java 8, and you should be able to simply run the plugin, which will start an IntelliJ sandbox with the plugin installed.
   - Otherwise, use 'Build->Prepare plugin for development' and install the zipped plugin (Settings->Plugins->Install from disk)
+
+
+## Building
+From the intellij-lsp subdirectory, run `./gradlew buildPlugin`
