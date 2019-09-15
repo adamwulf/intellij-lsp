@@ -10,9 +10,5 @@ class EditorMouseMotionListenerImpl extends EditorMouseMotionListener with LSPLi
 
   override def mouseDragged(e: EditorMouseEvent): Unit = {}
 
-  override def mouseMoved(e: EditorMouseEvent): Unit = {
-    if (checkEnabled()) {
-      manager.mouseMoved(e)
-    }
-  }
+  override def mouseMoved(e: EditorMouseEvent): Unit = { }
 }

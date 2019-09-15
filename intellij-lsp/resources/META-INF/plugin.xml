@@ -67,8 +67,6 @@
     </extensions>
 
     <actions>
-        <action class="com.github.gtache.lsp.actions.LSPQuickDocAction" id="QuickJavaDoc" text="Quick Doc"
-                overrides="true"/> <!-- Overrides quickdoc if possible, otherwise delegates to it -->
         <action class="com.github.gtache.lsp.actions.LSPReformatAction" id="ReformatCode" use-shortcut-of="ReformatCode"
                 overrides="true" text="Reformat Code"/>
         <action class="com.github.gtache.lsp.actions.LSPShowReformatDialogAction" id="ShowReformatFileDialog"

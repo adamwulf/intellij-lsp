@@ -47,9 +47,7 @@ import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 object EditorEventManager {
-  private val HOVER_TIME_THRES: Long = EditorSettingsExternalizable.getInstance().getQuickDocOnMouseOverElementDelayMillis * 1000000
   private val SCHEDULE_THRES = 10000000 //Time before the Timer is scheduled
-  private val POPUP_THRES = HOVER_TIME_THRES / 1000000 + 20
   private val CTRL_THRES = 500000000 //Time between requests when ctrl is pressed (500ms)
 
   private val uriToManager: mutable.Map[String, EditorEventManager] = mutable.HashMap()
@@ -1046,110 +1044,6 @@ class EditorEventManager(val editor: Editor, val mouseListener: EditorMouseListe
     }
   }
 
-  /**
-    * Will show documentation if the mouse doesn't move for a given time (Hover)
-    *
-    * @param e the event
-    */
-  def mouseMoved(e: EditorMouseEvent): Unit = {
-    if (e.getEditor == editor) {
-      val language = PsiDocumentManager.getInstance(project).getPsiFile(editor.getDocument).getLanguage
-      if ((LSPState.getInstance().isAlwaysSendRequests || LanguageDocumentation.INSTANCE.allForLanguage(language).isEmpty || language.equals(PlainTextLanguage.INSTANCE))
-        && (isCtrlDown || EditorSettingsExternalizable.getInstance().isShowQuickDocOnMouseOverElement)) {
-        val curTime = System.nanoTime()
-        if (predTime == (-1L) || ctrlTime == (-1L)) {
-          predTime = curTime
-          ctrlTime = curTime
-        } else {
-          val lPos = getPos(e)
-          if (lPos != null) {
-            if (!isKeyPressed || isCtrlDown) {
-              val offset = editor.logicalPositionToOffset(lPos)
-              if (isCtrlDown && curTime - ctrlTime > CTRL_THRES) {
-                if (ctrlRange == null || !ctrlRange.highlightContainsOffset(offset)) {
-                  if (currentHint != null) currentHint.hide()
-                  currentHint = null
-                  if (ctrlRange != null) ctrlRange.dispose()
-                  ctrlRange = null
-                  pool(() => requestAndShowDoc(curTime, lPos, e.getMouseEvent.getPoint))
-                } else if (ctrlRange.definitionContainsOffset(offset)) {
-                  createAndShowEditorHint(editor, "Click to show usages", editor.offsetToXY(offset))
-                } else {
-                  editor.getContentComponent.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR))
-                }
-                ctrlTime = curTime
-              } else {
-                scheduleDocumentation(curTime, lPos, e.getMouseEvent.getPoint)
-              }
-
-            }
-          }
-          predTime = curTime
-        }
-      }
-    } else {
-      LOG.error("Wrong editor for EditorEventManager")
-    }
-  }
-
-  /**
-    * Immediately requests the server for documentation at the current editor position
-    *
-    * @param editor The editor
-    */
-  def quickDoc(editor: Editor): Unit = {
-    if (editor == this.editor) {
-      val caretPos = editor.getCaretModel.getLogicalPosition
-      val pointPos = editor.logicalPositionToXY(caretPos)
-      val currentTime = System.nanoTime()
-      pool(() => requestAndShowDoc(currentTime, caretPos, pointPos))
-      predTime = currentTime
-    } else {
-      LOG.warn("Not same editor!")
-    }
-  }
-
-  /**
-    * Gets the hover request and shows it
-    *
-    * @param curTime   The current time
-    * @param editorPos The editor position
-    * @param point     The point at which to show the hint
-    */
-  private def requestAndShowDoc(curTime: Long, editorPos: LogicalPosition, point: Point): Unit = {
-    val serverPos = computableReadAction[Position](() => DocumentUtils.logicalToLSPPos(editorPos, editor))
-    val request = requestManager.hover(new TextDocumentPositionParams(identifier, serverPos))
-    if (request != null) {
-      try {
-        val hover = request.get(HOVER_TIMEOUT, TimeUnit.MILLISECONDS)
-        wrapper.notifySuccess(Timeouts.HOVER)
-        if (hover != null) {
-          val string = HoverHandler.getHoverString(hover)
-          if (string != null && string != "") {
-            if (isCtrlDown) {
-              invokeLater(() => if (!editor.isDisposed) currentHint = createAndShowEditorHint(editor, string, point, flags = HintManager.HIDE_BY_OTHER_HINT))
-              createCtrlRange(serverPos, hover.getRange)
-            } else {
-              invokeLater(() => if (!editor.isDisposed) currentHint = createAndShowEditorHint(editor, string, point))
-            }
-          } else {
-            LOG.warn("Hover string returned is null for file " + identifier.getUri + " and pos (" + serverPos.getLine + ";" + serverPos.getCharacter + ")")
-          }
-        } else {
-          LOG.warn("Hover is null for file " + identifier.getUri + " and pos (" + serverPos.getLine + ";" + serverPos.getCharacter + ")")
-        }
-      } catch {
-        case e: TimeoutException =>
-          LOG.warn(e)
-          wrapper.notifyFailure(Timeouts.HOVER)
-        case e@(_: java.io.IOException | _: JsonRpcException | _: ExecutionException) =>
-          LOG.warn(e)
-          wrapper.crashed(e.asInstanceOf[Exception])
-      }
-    }
-
-
-  }
 
   /**
     * Returns the references given the position of the word to search for
@@ -1533,40 +1427,4 @@ class EditorEventManager(val editor: Editor, val mouseListener: EditorMouseListe
     }
   }
 
-  /**
-    * Schedule the documentation using the Timer
-    *
-    * @param time      The current time
-    * @param editorPos The position in the editor
-    * @param point     The point where to show the doc
-    */
-  private def scheduleDocumentation(time: Long, editorPos: LogicalPosition, point: Point): Unit = {
-    if (editorPos != null) {
-      if (time - predTime > SCHEDULE_THRES) {
-        try {
-          hoverThread.schedule(new TimerTask {
-            override def run(): Unit = {
-              if (!editor.isDisposed) {
-                val curTime = System.nanoTime()
-                if (curTime - predTime > HOVER_TIME_THRES && mouseInEditor && editor.getContentComponent.hasFocus && (!isKeyPressed || isCtrlDown)) {
-                  val editorOffset = computableReadAction[Int](() => editor.logicalPositionToOffset(editorPos))
-                  val inHighlights = diagnosticsHighlights.filter(diag =>
-                    diag.rangeHighlighter.getStartOffset <= editorOffset &&
-                      editorOffset <= diag.rangeHighlighter.getEndOffset)
-                  if (inHighlights.isEmpty || isCtrlDown) {
-                    requestAndShowDoc(curTime, editorPos, point)
-                  }
-                }
-              }
-            }
-          }, POPUP_THRES)
-        } catch {
-          case e: Exception =>
-            hoverThread = new Timer("Hover", true) //Restart Timer if it crashes
-            LOG.warn(e)
-            LOG.warn("Hover timer reset")
-        }
-      }
-    }
-  }
 }
