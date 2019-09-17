@@ -42,6 +42,7 @@ import com.intellij.uiDesigner.core.{GridConstraints, GridLayoutManager, Spacer}
 import javax.swing.{JFrame, JLabel, JPanel}
 import org.eclipse.lsp4j._
 import org.eclipse.lsp4j.jsonrpc.JsonRpcException
+import org.eclipse.lsp4j.jsonrpc.MessageIssueException
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
@@ -222,6 +223,8 @@ class EditorEventManager(val editor: Editor, val mouseListener: EditorMouseListe
               }
             }
           } catch {
+            case e: MessageIssueException =>
+              LOG.info(e)
             case e: TimeoutException =>
               LOG.warn(e)
               wrapper.notifyFailure(Timeouts.SIGNATURE)
